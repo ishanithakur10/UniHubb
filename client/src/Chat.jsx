@@ -1,9 +1,9 @@
-import { useContext, useEffect,useState } from "react"
+import { useContext, useEffect,useRef,useState } from "react"
 import Avatar from "./Avatar";
 import Logo from "./Logo";
 import { UserContext } from "./UserContext.";
 import {uniqBy} from "lodash";
-
+import axios from "axios";
 
 export default function Chat() {
     const[onlinePeople,setOnlinePeople]=useState({});
@@ -12,12 +12,23 @@ export default function Chat() {
     const [newMessageText,setNewMessageText]=useState('');
     const [messages,setMessages]=useState([]);
     const {username,id}=useContext(UserContext);
+    const divUnderMessages = useRef();
 
-    useEffect(()=>{
-       const ws =  new WebSocket('ws://localhost:4040');
-       setWs(ws);
-       ws.addEventListener('message',handleMessage)
-    },[])
+    useEffect(() => {
+        connectToWs();
+      }, [selectedUserId]);
+
+      function connectToWs() {
+        const ws = new WebSocket('ws://localhost:4040');
+        setWs(ws);
+        ws.addEventListener('message', handleMessage);
+        ws.addEventListener('close', () => {
+          setTimeout(() => {
+            console.log('Disconnected. Trying to reconnect.');
+            connectToWs();
+          }, 1000);
+        });
+      }
 
     function showOnlinePeople(peopleArray){
         const people={};
@@ -51,22 +62,56 @@ export default function Chat() {
             text: newMessageText,
             sender:id,
             recipient:selectedUserId,
-            id:Date.now(),
+            _id:Date.now(),
         }]));
     }
+    useEffect(() => {
+        const div = divUnderMessages.current;
+        if (div) {
+          div.scrollIntoView({behavior:'smooth', block:'end'});
+        }
+      }, [messages]);
 
+    useEffect(() => {
+        if (selectedUserId) {
+          axios.get('/messages/'+selectedUserId).then(res => {
+            setMessages(res.data);
+          });
+        }
+      }, [selectedUserId]);
+    // function sendMessage(ev, file = null) {
+    //     if (ev) ev.preventDefault();
+    //     ws.send(JSON.stringify({
+    //       recipient: selectedUserId,
+    //       text: newMessageText,
+    //       file,
+    //     }));
+    //     if (file) {
+    //       axios.get('/messages/'+selectedUserId).then(res => {
+    //         setMessages(res.data);
+    //       });
+    //     } else {
+    //       setNewMessageText('');
+    //       setMessages(prev => ([...prev,{
+    //         text: newMessageText,
+    //         sender: id,
+    //         recipient: selectedUserId,
+    //         _id: Date.now(),
+    //       }]));
+    //     }
+    //   }
     const onlinePeopleExclOurUser={...onlinePeople};
     // console.log(onlinePeopleExclOurUser);
     delete onlinePeopleExclOurUser[id];
 
-    const messagesWithoutDupes=uniqBy(messages,'id');
+    const messagesWithoutDupes=uniqBy(messages,'_id');
 
     return (
         <div className="flex h-screen">
             <div className="bg-white  w-1/3 p-2">
                 <Logo/>
                 
-                {Object.keys(onlinePeople).map(userId =>(
+                {Object.keys(onlinePeopleExclOurUser).map(userId =>(
                     <div key={userId} onClick={()=>setSelectedUserId(userId)} 
                         className={"border-b border-gray-100 py-2 pl-4 flex items-center gap-2 cursor-pointer"+(userId === selectedUserId ? 'bg-blue-50':'')}>
                         {userId === selectedUserId &&(
@@ -92,17 +137,19 @@ export default function Chat() {
                         </div>
                     )}
                     {!!selectedUserId && (
-                        <div className="overflow-y-scroll">
+                        <div className="relative h-full">
+                      <div className="overflow-y-scroll absolute top-0 left-0 right-0 bottom-2">
                             {messagesWithoutDupes.map(message =>(
-                                <div className={(message.sender===id ? 'text-right':'text-left')}>
-                                <div className={"text-left inline-block p-2 my-2 rounded-dm text-md"+(message.sender===id ? 'bg-blue-700 text-gray-800':'bg-teal-500  text-gray-800')}>
-                                sender:{message.sender}<br/>
-                                my id:{id}<br/>
-                                {message.text}
+                               <div key={message._id} className={(message.sender === id ? 'text-right': 'text-left')}>
+                                <div className={"text-left inline-block p-2 my-2 rounded-md text-sm " +(message.sender === id ? 'bg-blue-500 text-white':'bg-white text-gray-500')}>
+                                  {message.text}
                                 </div>
-                                </div>
+                              </div>
                             ))}
+                            <div ref={divUnderMessages}>
+                            </div>
                         </div>
+                       </div> 
                     )}
                 </div>
 
